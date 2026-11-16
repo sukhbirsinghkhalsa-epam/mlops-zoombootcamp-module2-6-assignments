@@ -1,88 +1,158 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+"""
+NYC Yellow Taxi - Prefect + MLflow homework
+
+Local setup (PowerShell):
+    python -m venv venv
+    .\venv\Scripts\Activate.ps1
+    python -m pip install --upgrade pip
+    pip install prefect mlflow pandas pyarrow scikit-learn
+
+Start MLflow in Terminal 1:
+    mlflow server --host 127.0.0.1 --port 5000
+
+Optional: start the Prefect UI/API in another terminal:
+    prefect server start
+
+Run the pipeline:
+    python task3.py
+
+The pipeline trains on March 2023 and validates on April 2023.
+"""
+
 # ============================================================
 # IMPORT REQUIRED LIBRARIES
 # ============================================================
+
 import pickle
 from pathlib import Path
-
-import pandas as pd
-import xgboost as xgb
 import numpy as np
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.metrics import root_mean_squared_error
-
 import mlflow
-print("import successful")
+import mlflow.sklearn
+import pandas as pd
+import prefect
+from prefect import flow, task
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
 
-mlflow.set_tracking_uri("http://localhost:5000")
-mlflow.set_experiment("nyc-taxi-experiment")
+print("Imports successful")
 
-models_folder = Path('models')
-models_folder.mkdir(exist_ok=True)
-print("mlflow setup successful")
+# ============================================================
+# MLFLOW CONFIGURATION
+# ============================================================
+
+MLFLOW_TRACKING_URI = "http://127.0.0.1:5000"
+MLFLOW_EXPERIMENT_NAME = "nyc-taxi-experiment"
+REGISTERED_MODEL_NAME = "nyc-yellow-taxi-duration-model"
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+
+MODELS_FOLDER = Path("models")
+MODELS_FOLDER.mkdir(parents=True, exist_ok=True)
+
+print("MLflow tracking URI:", MLFLOW_TRACKING_URI)
+print("MLflow experiment:", MLFLOW_EXPERIMENT_NAME)
 
 # ============================================================
 # QUESTION 1: SELECT THE TOOL
 # ============================================================
+
 # We are using Prefect as our workflow orchestrator.
 # Prefect helps us create, manage, and execute ML pipelines.
-# ============================================================
 
-import prefect
 print("Orchestrator used: Prefect")
-
 
 # ============================================================
 # QUESTION 2: VERSION
 # ============================================================
+
 # Print the installed version of Prefect.
-# This confirms which version of the orchestrator we are using.
-# ============================================================
-
 print("Prefect Version:", prefect.__version__)
-
 
 # ============================================================
 # QUESTION 3: CREATING A PIPELINE
 # ============================================================
-# Task 1:
-# Download the March 2023 Yellow Taxi dataset.
-# Command used
-#python task3.py --year 2023 --month 03
-#
-# Task 2:
-# Read the parquet file using Pandas.
-#
-# Task 3:
-# Print the total number of records loaded.
-#
-# Expected output should match one of the homework options.
-# ============================================================
 
+@task(name="load-yellow-taxi-data")
+def load_dataframe(year: int, month: int) -> pd.DataFrame:
+    """
+    Download and load the requested Yellow Taxi Parquet file.
+    Prints the raw record count before data preparation.
+    """
+    url = (
+        "https://d37ci6vzurychx.cloudfront.net/trip-data/"
+        f"yellow_tripdata_{year}-{month:02d}.parquet"
+    )
 
-def read_dataframe(year, month):
-    url = f'https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_{year}-{month:02d}.parquet'
+    print(f"Loading Yellow Taxi data: {year}-{month:02d}")
     df = pd.read_parquet(url)
 
-    df['duration'] = df.lpep_dropoff_datetime - df.lpep_pickup_datetime
-    df.duration = df.duration.apply(lambda td: td.total_seconds() / 60)
-
-    df = df[(df.duration >= 1) & (df.duration <= 60)]
-
-    categorical = ['PULocationID', 'DOLocationID']
-    df[categorical] = df[categorical].astype(str)
-
-    df['PU_DO'] = df['PULocationID'] + '_' + df['DOLocationID']
-
+    print(f"Total records loaded ({year}-{month:02d}): {len(df):,}")
     return df
 
 
+# ============================================================
+# QUESTION 4: DATA PREPARATION
+# ============================================================
+
+@task(name="prepare-taxi-data")
+def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply the homework's data-preparation logic:
+      1. Calculate trip duration.
+      2. Convert duration to minutes.
+      3. Keep trips between 1 and 60 minutes.
+      4. Convert pickup/drop-off location IDs to strings.
+    """
+    df = df.copy()
+
+    df["duration"] = (
+        df["tpep_dropoff_datetime"] - df["tpep_pickup_datetime"]
+    )
+    df["duration"] = df["duration"].dt.total_seconds() / 60
+
+    df = df[(df["duration"] >= 1) & (df["duration"] <= 60)].copy()
+
+    categorical = ["PULocationID", "DOLocationID"]
+    df[categorical] = df[categorical].astype(str)
+
+    print(f"Records after duration filtering: {len(df):,}")
+    return df
+
+
+# ============================================================
+# QUESTION 5: FEATURE TRANSFORMATION AND MODEL TRAINING
+# ============================================================
+
+# @task(name="create-features")
+# def create_X(df: pd.DataFrame, dv: DictVectorizer = None):
+#     """
+#     Keep pickup and drop-off locations as separate categorical features.
+#     Do not create a combined PU_DO feature.
+#     """
+#     categorical = ["PULocationID", "DOLocationID"]
+#     numerical = ["trip_distance"]
+
+#     dicts = df[categorical + numerical].to_dict(orient="records")
+
+#     if dv is None:
+#         dv = DictVectorizer(sparse=True)
+#         X = dv.fit_transform(dicts)
+#     else:
+#         X = dv.transform(dicts)
+
+#     return X, dv
+
+@task(name="create-features")
 def create_X(df, dv=None):
-    categorical = ['PU_DO']
-    numerical = ['trip_distance']
-    dicts = df[categorical + numerical].to_dict(orient='records')
+
+    categorical = ['PULocationID', 'DOLocationID']
+
+    dicts = df[categorical].to_dict(orient='records')
 
     if dv is None:
         dv = DictVectorizer(sparse=True)
@@ -93,172 +163,109 @@ def create_X(df, dv=None):
     return X, dv
 
 
-# ============================================================
-# QUESTION 4: DATA PREPARATION
-# ============================================================
-# Task 1:
-# Calculate trip duration using pickup and dropoff timestamps.
-#
-# Task 2:
-# Convert duration into minutes.
-#
-# Task 3:
-# Filter trips where duration is between 1 and 60 minutes.
-#
-# Task 4:
-# Convert pickup and dropoff location IDs into strings.
-#
-# Task 5:
-# Print the final number of records after filtering.
-# ============================================================
-
-
+@task(name="train-linear-regression-and-log-to-mlflow")
 def train_model(X_train, y_train, X_val, y_val, dv):
-    with mlflow.start_run() as run:
-        train = xgb.DMatrix(X_train, label=y_train)
-        valid = xgb.DMatrix(X_val, label=y_val)
+    """
+    Fit default LinearRegression, print its intercept, and log the
+    trained model and DictVectorizer artifact to MLflow.
 
-        best_params = {
-            'learning_rate': 0.09585355369315604,
-            'max_depth': 30,
-            'min_child_weight': 1.060597050922164,
-            'objective': 'reg:linear',
-            'reg_alpha': 0.018060244040060163,
-            'reg_lambda': 0.011658731377413597,
-            'seed': 42
-        }
+    Returns both the DictVectorizer and trained LinearRegression model.
+    """
+    with mlflow.start_run() as active_run:
+        model = LinearRegression()
+        model.fit(X_train, y_train)
 
-        mlflow.log_params(best_params)
+        # Homework question 5: print model intercept.
+        print("Model intercept:", model.intercept_)
 
-        booster = xgb.train(
-            params=best_params,
-            dtrain=train,
-            num_boost_round=30,
-            evals=[(valid, 'validation')],
-            early_stopping_rounds=50
-        )
-
-        y_pred = booster.predict(valid)
+        y_pred = model.predict(X_val)
         rmse = np.sqrt(mean_squared_error(y_val, y_pred))
 
-        with open("models/preprocessor.b", "wb") as f_out:
+        mlflow.log_param("model_type", "LinearRegression")
+        mlflow.log_param("training_dataset", "Yellow Taxi March 2023")
+        mlflow.log_param("validation_dataset", "Yellow Taxi April 2023")
+        mlflow.log_metric("validation_rmse", rmse)
+        mlflow.log_metric("model_intercept", float(model.intercept_))
+
+        # Save and log the fitted DictVectorizer separately.
+        preprocessor_path = MODELS_FOLDER / "preprocessor.b"
+        with preprocessor_path.open("wb") as f_out:
             pickle.dump(dv, f_out)
-        mlflow.log_artifact("models/preprocessor.b", artifact_path="preprocessor")
 
-        mlflow.xgboost.log_model(booster, artifact_path="models_mlflow")
+        mlflow.log_artifact(
+            str(preprocessor_path),
+            name="preprocessor"
+        )
 
-        return run.info.run_id
+        # Log the trained sklearn model and register a model version.
+        # The model is trained on the feature matrix produced by dv;
+        # the DictVectorizer is logged above as a separate artifact.
+        model_info = mlflow.sklearn.log_model(
+            sk_model=model,
+            name="model",
+            registered_model_name=REGISTERED_MODEL_NAME
+        )
 
+        print("MLflow run ID:", active_run.info.run_id)
+        print("Logged model URI:", model_info.model_uri)
 
+        # Save run ID locally for reference.
+        Path("run_id.txt").write_text(
+            active_run.info.run_id,
+            encoding="utf-8"
+        )
 
-# ============================================================
-# QUESTION 5: TRAIN A MODEL
-# ============================================================
-# Task 1:
-# Select pickup and dropoff location IDs separately.
-#
-# Task 2:
-# Convert the categorical features into dictionaries.
-#
-# Task 3:
-# Fit a DictVectorizer.
-#
-# Task 4:
-# Train LinearRegression with default parameters.
-#
-# Task 5:
-# Print the model intercept.
-#
-# Task 6:
-# Return both the DictVectorizer and trained model.
-# ============================================================
-
-def run(year, month):
-    df_train = read_dataframe(year=year, month=month)
-
-    next_year = year if month < 12 else year + 1
-    next_month = month + 1 if month < 12 else 1
-    df_val = read_dataframe(year=next_year, month=next_month)
-
-    X_train, dv = create_X(df_train)
-    X_val, _ = create_X(df_val, dv)
-
-    target = 'duration'
-    y_train = df_train[target].values
-    y_val = df_val[target].values
-
-    run_id = train_model(X_train, y_train, X_val, y_val, dv)
-    print(f"MLflow run_id: {run_id}")
-    return run_id
-
-
-# ============================================================
-# QUESTION 6: REGISTER / LOG THE MODEL USING MLFLOW
-# ============================================================
-# Task 1:
-# Create an MLflow experiment.
-#
-# Task 2:
-# Start an MLflow run.
-#
-# Task 3:
-# Combine DictVectorizer and LinearRegression into a pipeline.
-#
-# Task 4:
-# Log the trained model using MLflow.
-#
-# Task 5:
-# Print the model URI and model_size_bytes.
-#
-# Task 6:
-# Open MLflow UI to inspect the logged model.
-# ============================================================
-
-if __name__ == "__main__":
-    print("inside main")
-    import argparse
-
-    parser = argparse.ArgumentParser(description='Train a model to predict taxi trip duration.')
-    parser.add_argument('--year', type=int, required=True, help='Year of the data to train on')
-    parser.add_argument('--month', type=int, required=True, help='Month of the data to train on')
-    args = parser.parse_args()
-
-    run_id = run(year=args.year, month=args.month)
-
-    with open("run_id.txt", "w") as f:
-        f.write(run_id)
-
-
-
-
-
-
-
-
-
-
-
+        return dv, model
 
 
 # ============================================================
 # MAIN PREFECT PIPELINE
 # ============================================================
-# This is the main workflow.
-#
-# Execution order:
-#
-# 1. Load March 2023 Yellow Taxi data.
-# 2. Prepare and filter the data.
-# 3. Train the Linear Regression model.
-# 4. Log the model using MLflow.
-#
-# Prefect manages the execution of these tasks.
-# ============================================================
+
+@flow(name="nyc-yellow-taxi-training-pipeline")
+def main_flow():
+    """
+    Orchestrates the end-to-end homework pipeline.
+
+    Training data: March 2023 Yellow Taxi
+    Validation data: April 2023 Yellow Taxi
+    """
+
+    # Load March 2023 training data.
+    df_train_raw = load_dataframe(2023, 3)
+
+    # Load April 2023 validation data.
+    df_val_raw = load_dataframe(2023, 4)
+
+    # Prepare and filter both datasets.
+    df_train = prepare_dataframe(df_train_raw)
+    df_val = prepare_dataframe(df_val_raw)
+
+    # Fit DictVectorizer on training data and transform validation data.
+    X_train, dv = create_X(df_train)
+    X_val, _ = create_X(df_val, dv)
+
+    # Target variable.
+    y_train = df_train["duration"].values
+    y_val = df_val["duration"].values
+
+    # Train model and log artifacts/model to MLflow.
+    dv, model = train_model(
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        dv
+    )
+
+    print("Prefect pipeline completed successfully!")
+    return model
 
 
 # ============================================================
 # PIPELINE EXECUTION
 # ============================================================
-# Run the complete Prefect pipeline locally.
-# ============================================================
 
+if __name__ == "__main__":
+    print("Starting NYC Yellow Taxi Prefect pipeline...")
+    main_flow()
