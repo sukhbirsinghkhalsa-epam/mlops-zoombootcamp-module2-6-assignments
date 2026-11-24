@@ -39,22 +39,18 @@ Now let's put everything into a virtual environment. We'll use pipenv for that.
 Install all the required libraries. Pay attention to the Scikit-Learn version: it should be the same as in the starter notebook.
 
 After installing the libraries, pipenv creates two files: Pipfile and Pipfile.lock. The Pipfile.lock file keeps the hashes of the dependencies we use for the virtual env.
-![output](q4_pipenv.png)
 
 What's the first hash for the Scikit-Learn dependency?
+![output](q4_pipenv.png)
 
-![output](q5_mean_param_sscript.png)
 Q5. Parametrize the script
 Let's now make the script configurable via CLI. We'll create two parameters: year and month.
 
 Run the script for April 2023.
 
 What's the mean predicted duration?
-
-7.29
-14.29
-21.29
-28.29
+14.29 ~= 14.83
+![output](q5_mean_param_sscript.png)
 
 ## pending from my end will try to complete it today, some confusion on the task so it is being delayed
 Q6. Docker container
