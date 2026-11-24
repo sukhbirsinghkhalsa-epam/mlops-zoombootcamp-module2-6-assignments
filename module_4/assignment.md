@@ -5,7 +5,7 @@ Run this notebook for the March 2023 data.
 
 What's the standard deviation of the predicted duration for this dataset?
 6.24
-
+![output](q1_standard_deviation.png)
 Q2. Preparing the output
 Like in the course videos, we want to prepare the dataframe with the output.
 
@@ -24,13 +24,14 @@ df_result.to_parquet(
 )
 What's the size of the output file?M
 ~=66M
-
+![output](q2_file_size.png)
 Note: Make sure you use the snippet above for saving the file. It should contain only these two columns. For this question, don't change the dtypes of the columns and use pyarrow, not fastparquet.
 
 Q3. Creating the scoring script
 Now let's turn the notebook into a script.
 
 Which command you need to execute for that?
+![output](Q3_notebook_to_scri[t.png)
 
 Q4. Virtual environment
 Now let's put everything into a virtual environment. We'll use pipenv for that.
@@ -38,9 +39,11 @@ Now let's put everything into a virtual environment. We'll use pipenv for that.
 Install all the required libraries. Pay attention to the Scikit-Learn version: it should be the same as in the starter notebook.
 
 After installing the libraries, pipenv creates two files: Pipfile and Pipfile.lock. The Pipfile.lock file keeps the hashes of the dependencies we use for the virtual env.
+![output](q4_pipenv.png)
 
 What's the first hash for the Scikit-Learn dependency?
 
+## pending from my end will try to complete it today, some confusion on the task so it is being delayed
 Q5. Parametrize the script
 Let's now make the script configurable via CLI. We'll create two parameters: year and month.
 
