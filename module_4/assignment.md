@@ -43,7 +43,7 @@ After installing the libraries, pipenv creates two files: Pipfile and Pipfile.lo
 
 What's the first hash for the Scikit-Learn dependency?
 
-## pending from my end will try to complete it today, some confusion on the task so it is being delayed
+![output](q5_mean_param_sscript.png)
 Q5. Parametrize the script
 Let's now make the script configurable via CLI. We'll create two parameters: year and month.
 
@@ -56,6 +56,7 @@ What's the mean predicted duration?
 21.29
 28.29
 
+## pending from my end will try to complete it today, some confusion on the task so it is being delayed
 Q6. Docker container
 Finally, we'll package the script in the docker container. For that, you'll need to use a base image that we prepared.
 
