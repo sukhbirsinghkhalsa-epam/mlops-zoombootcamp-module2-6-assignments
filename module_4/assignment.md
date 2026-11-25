@@ -52,7 +52,6 @@ What's the mean predicted duration?
 14.29 ~= 14.83
 ![output](q5_mean_param_sscript.png)
 
-## pending from my end will try to complete it today, some confusion on the task so it is being delayed
 Q6. Docker container
 Finally, we'll package the script in the docker container. For that, you'll need to use a base image that we prepared.
 
@@ -76,8 +75,5 @@ This image already has a pickle file with a dictionary vectorizer and a model. Y
 Important: don't copy the model to the docker image. You will need to use the pickle file already in the image.
 
 Now run the script with docker. What's the mean predicted duration for May 2023?
-
-0.19
-7.24
-14.24
-21.19
+![output](q6_docker_mean_prediction.png)
+**predicted standard deviation: 1.3881399472264797**
